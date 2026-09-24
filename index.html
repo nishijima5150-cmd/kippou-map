@@ -106,6 +106,7 @@
 
   .saved-row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; font-size:12px; color:var(--paper-dim)}
   .saved-row[hidden]{display:none}
+  .saved-row span{white-space:nowrap}
   .saved-row button.ghost{margin:0; width:auto; padding:6px 12px; font-size:12px; flex:none}
 
   .honmei-line{display:flex; align-items:center; gap:14px}
@@ -274,7 +275,7 @@
         <label>生年月日</label>
         <input type="date" id="birth" value="1990-01-01" min="1920-01-01" max="2025-12-31">
         <div class="saved-row" id="birthSaved" hidden>
-          <span>この端末に保存済み</span>
+          <span title="このブラウザにだけ保存されています">保存済み</span>
           <button type="button" class="ghost" id="birthClear">消去</button>
         </div>
       </div>
