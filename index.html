@@ -426,7 +426,7 @@ function analyze(birthDate, targetDate){
 /* ===================== 地図 ===================== */
 let map, originMarker, wedgeLayer, ringLayer, cafeLayer;
 let origin=null, activeBearing=null, lastAnalysis=null;
-const WEDGE_KM=15, HALF_ANGLE=22.5, CAFE_RADIUS_M=10000;
+const WEDGE_KM=35, HALF_ANGLE=22.5, CAFE_RADIUS_M=10000;
 const toRad=x=>x*Math.PI/180, toDeg=x=>x*180/Math.PI;
 function destPoint(lat,lng,brng,dKm){
   const R=6371,d=dKm/R,t=toRad(brng),p1=toRad(lat),l1=toRad(lng);
