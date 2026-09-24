@@ -104,6 +104,10 @@
     background:transparent; border:1px solid var(--gold-dim); border-radius:3px;
   }
 
+  .saved-row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; font-size:12px; color:var(--paper-dim)}
+  .saved-row[hidden]{display:none}
+  .saved-row button.ghost{margin:0; width:auto; padding:6px 12px; font-size:12px; flex:none}
+
   .honmei-line{display:flex; align-items:center; gap:14px}
   .seal{
     flex:none; width:52px; height:52px; border-radius:50%;
@@ -269,6 +273,10 @@
       <div>
         <label>生年月日</label>
         <input type="date" id="birth" value="1990-01-01" min="1920-01-01" max="2025-12-31">
+        <div class="saved-row" id="birthSaved" hidden>
+          <span>この端末に保存済み</span>
+          <button type="button" class="ghost" id="birthClear">消去</button>
+        </div>
       </div>
       <div>
         <label>調べる日</label>
@@ -640,6 +648,20 @@ function parseInputDate(id){
   const [y,m,d]=v.split('-').map(Number);
   return new Date(Date.UTC(y,m-1,d));
 }
+/* 生年月日はこのブラウザの localStorage にだけ保存する（外部には送らない） */
+const BIRTH_KEY="kippou-map:birth", BIRTH_DEFAULT=$('birth').value;
+function saveBirth(v){
+  try{ if(v) localStorage.setItem(BIRTH_KEY,v); else localStorage.removeItem(BIRTH_KEY); }catch(e){}
+  $('birthSaved').hidden=!v;
+}
+function restoreBirth(){
+  let v=null;
+  try{ v=localStorage.getItem(BIRTH_KEY); }catch(e){}
+  if(v && /^\d{4}-\d{2}-\d{2}$/.test(v)){ $('birth').value=v; $('birthSaved').hidden=false; }
+}
+$('birth').addEventListener('change',e=>{ if(parseInputDate('birth')) saveBirth(e.target.value); });
+$('birthClear').addEventListener('click',()=>{ saveBirth(null); $('birth').value=BIRTH_DEFAULT; });
+
 $('calc').addEventListener('click',()=>{
   $('calcErr').hidden=true;
   const b=parseInputDate('birth'), t=parseInputDate('target');
@@ -654,6 +676,7 @@ $('locBtn').addEventListener('click',locate);
   const now=new Date();
   const jst=new Date(now.getTime()+(now.getTimezoneOffset()+540)*60000);
   $('target').value=`${jst.getFullYear()}-${String(jst.getMonth()+1).padStart(2,'0')}-${String(jst.getDate()).padStart(2,'0')}`;
+  restoreBirth();
   initMap();
 })();
 </script>
