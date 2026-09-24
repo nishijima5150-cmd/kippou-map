@@ -218,6 +218,14 @@
   /* ---- 地図 ---- */
   .toggle{display:flex; align-items:center; gap:9px; margin:12px 0 4px; font-size:13px; color:var(--paper)}
   .toggle input{width:20px; height:20px; accent-color:var(--gold)}
+  .toggles{display:flex; flex-wrap:wrap; gap:4px 18px; margin:12px 0 4px}
+  .toggles .toggle{margin:0}
+  .poi-ic{
+    display:flex; align-items:center; justify-content:center;
+    width:24px; height:24px; border-radius:50%; border:2px solid #fff8e6;
+    font-size:13px; line-height:1; color:#fff; box-shadow:0 1px 3px #000;
+  }
+  .toggle .poi-ic{width:20px; height:20px; font-size:11px; border-width:1px; box-shadow:none}
   #map{
     height:56vh; min-height:320px; margin-top:10px;
     border:2px solid var(--gold); border-radius:3px;
@@ -305,10 +313,8 @@
   <div class="card" id="mapCard" hidden>
     <p class="eyebrow">現在地より望む</p>
     <div class="hint">金色の帯が「今いる場所から見た吉方」です。地図をタップすると出発地点を移せます。</div>
-    <label class="toggle">
-      <input type="checkbox" id="showCafe">
-      吉方のカフェを地図に出す
-    </label>
+    <div class="hint">吉方の帯の中にある場所を地図に出す</div>
+    <div class="toggles" id="poiToggles"></div>
     <div id="mapErr" class="msg err" hidden></div>
     <div id="map"></div>
     <button class="ghost" id="locBtn">現在地を取得しなおす</button>
@@ -316,7 +322,7 @@
 
   <div class="foot">
     <b>ご留意ください。</b>九星気学の簡易計算です（本命殺・五黄殺・暗剣殺・破・相生相剋を判定）。流派により結果が異なることがあります。立春前後のお生まれの方は、生まれた時刻により一つずれる場合があります。大切な判断は専門家にご相談ください。<br>
-    地図 © OpenStreetMap contributors／カフェ情報 © OpenStreetMap（Overpass API）
+    地図 © OpenStreetMap contributors／カフェ・神社・寺の情報 © OpenStreetMap（Overpass API）
   </div>
 </div>
 
@@ -424,9 +430,17 @@ function analyze(birthDate, targetDate){
 }
 
 /* ===================== 地図 ===================== */
-let map, originMarker, wedgeLayer, ringLayer, cafeLayer;
+let map, originMarker, wedgeLayer, ringLayer;
 let origin=null, activeBearing=null, lastAnalysis=null;
-const WEDGE_KM=35, HALF_ANGLE=22.5, CAFE_RADIUS_M=10000;
+const WEDGE_KM=35, HALF_ANGLE=22.5, POI_RADIUS_M=10000;
+// 地図に出すスポットの種類。sel は Overpass のクエリ条件。
+// 神社・寺は敷地（面）で登録されていることが多いので nwr ＋ out center で取得する。
+const POI_CATS={
+  cafe:  {label:"カフェ", icon:"☕", color:"#7a5230", sel:'node["amenity"="cafe"]'},
+  shrine:{label:"神社",   icon:"⛩", color:"#c23a2b", sel:'nwr["amenity"="place_of_worship"]["religion"="shinto"]'},
+  temple:{label:"寺",     icon:"卍", color:"#4b3f8f", sel:'nwr["amenity"="place_of_worship"]["religion"="buddhist"]'}
+};
+const poiLayers={}, poiReq={}, poiMsgs={};
 const toRad=x=>x*Math.PI/180, toDeg=x=>x*180/Math.PI;
 function destPoint(lat,lng,brng,dKm){
   const R=6371,d=dKm/R,t=toRad(brng),p1=toRad(lat),l1=toRad(lng);
@@ -444,7 +458,7 @@ const angleDiff=(a,b)=>Math.abs(((a-b+540)%360)-180);
 function initMap(){
   map=L.map('map',{zoomControl:true}).setView([35.681,139.767],12);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
-  map.on('click',e=>{ origin=[e.latlng.lat,e.latlng.lng]; drawOrigin(); drawWedge(); if(showCafe.checked) loadCafes(); });
+  map.on('click',e=>{ origin=[e.latlng.lat,e.latlng.lng]; drawOrigin(); drawWedge(); loadPois(); });
 }
 function drawOrigin(){
   if(!origin) return;
@@ -465,34 +479,55 @@ function drawWedge(){
   ]).addTo(map);
   map.fitBounds(L.polygon(pts).getBounds(),{padding:[28,28]});
 }
-async function loadCafes(){
-  mapErr.hidden=true;
+function poiIcon(c){
+  return L.divIcon({className:'',html:`<div class="poi-ic" style="background:${c.color}">${c.icon}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
+}
+function showPoiMsgs(){
+  const t=Object.values(poiMsgs).filter(Boolean);
+  mapErr.hidden=!t.length; mapErr.textContent=t.join(" ");
+}
+function clearPoi(key){
+  poiReq[key]=(poiReq[key]||0)+1;   // 取得中の結果を捨てる
+  if(poiLayers[key]){ poiLayers[key].remove(); poiLayers[key]=null; }
+  poiMsgs[key]=""; showPoiMsgs();
+}
+// チェックが入っている種類をまとめて取り直す（Overpass の同時接続制限を避けるため順番に取得）
+async function loadPois(){
+  for(const key of Object.keys(POI_CATS)){
+    if($('poi_'+key).checked) await loadPoi(key);
+  }
+}
+async function loadPoi(key){
+  const c=POI_CATS[key];
+  clearPoi(key);
   if(!origin || activeBearing==null) return;
-  if(cafeLayer) cafeLayer.remove();
+  const req=poiReq[key], bearing=activeBearing;
   const [lat,lng]=origin;
-  const q=`[out:json][timeout:20];node["amenity"="cafe"](around:${CAFE_RADIUS_M},${lat},${lng});out body 80;`;
+  const q=`[out:json][timeout:20];${c.sel}(around:${POI_RADIUS_M},${lat},${lng});out center 80;`;
   const eps=["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
   let data=null;
   for(const ep of eps){
     try{ const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain"},body:q}); if(!r.ok) continue; data=await r.json(); break; }
     catch(e){}
   }
-  if(!data){ mapErr.hidden=false; mapErr.textContent="カフェ情報を取得できませんでした。少し待って、もう一度お試しください。"; return; }
+  if(req!==poiReq[key]) return;   // 取得中に方角・地点の変更や非表示があった
+  if(!data){ poiMsgs[key]=`${c.label}の情報を取得できませんでした。少し待って、もう一度お試しください。`; showPoiMsgs(); return; }
   const marks=[];
   for(const el of data.elements){
-    if(el.type!=="node") continue;
-    if(angleDiff(bearingBetween(lat,lng,el.lat,el.lon),activeBearing)>HALF_ANGLE) continue;
-    const name=(el.tags&&(el.tags.name||el.tags["name:ja"]))||"カフェ";
-    marks.push(L.marker([el.lat,el.lon],{icon:L.divIcon({className:'',html:'<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px #000)">☕</div>',iconSize:[22,22],iconAnchor:[11,11]})}).bindPopup(name));
+    const la=el.lat??(el.center&&el.center.lat), lo=el.lon??(el.center&&el.center.lon);
+    if(la==null || lo==null) continue;
+    if(angleDiff(bearingBetween(lat,lng,la,lo),bearing)>HALF_ANGLE) continue;
+    const name=(el.tags&&(el.tags.name||el.tags["name:ja"]))||c.label;
+    marks.push(L.marker([la,lo],{icon:poiIcon(c)}).bindPopup(`${c.icon} ${name}`));
     if(marks.length>=40) break;
   }
-  cafeLayer=L.layerGroup(marks).addTo(map);
-  if(!marks.length){ mapErr.hidden=false; mapErr.textContent="この方角の近くに、登録されたカフェが見つかりませんでした。"; }
+  poiLayers[key]=L.layerGroup(marks).addTo(map);
+  if(!marks.length){ poiMsgs[key]=`この方角の近くに、登録された${c.label}が見つかりませんでした。`; showPoiMsgs(); }
 }
 function locate(){
   if(!navigator.geolocation){ showMapMsg("この端末では現在地を取得できません。地図をタップして出発地点を選んでください。"); return; }
   navigator.geolocation.getCurrentPosition(
-    p=>{ origin=[p.coords.latitude,p.coords.longitude]; drawOrigin(); drawWedge(); if(showCafe.checked) loadCafes(); },
+    p=>{ origin=[p.coords.latitude,p.coords.longitude]; drawOrigin(); drawWedge(); loadPois(); },
     ()=>showMapMsg("現在地を取得できませんでした。地図をタップして出発地点を選んでください。"),
     {enableHighAccuracy:true,timeout:8000,maximumAge:60000}
   );
@@ -501,7 +536,9 @@ function showMapMsg(t){ mapErr.hidden=false; mapErr.textContent=t; }
 
 /* ===================== 画面 ===================== */
 const $=id=>document.getElementById(id);
-const showCafe=$('showCafe'), mapErr=$('mapErr');
+const mapErr=$('mapErr');
+$('poiToggles').innerHTML=Object.entries(POI_CATS).map(([k,c])=>
+  `<label class="toggle"><input type="checkbox" id="poi_${k}"><span class="poi-ic" style="background:${c.color}">${c.icon}</span>${c.label}</label>`).join("");
 
 function setRoseRadius(){
   const rose=$('rose'); if(!rose) return;
@@ -589,7 +626,7 @@ function render(a, targetDate){
 function selectDir(bearing, roseEl){
   activeBearing=bearing;
   drawWedge();
-  if(showCafe.checked) loadCafes();
+  loadPois();
   syncRoseSel(bearing);
 }
 function syncRoseSel(bearing){
@@ -610,7 +647,7 @@ $('calc').addEventListener('click',()=>{
   lastAnalysis=analyze(b,t);
   render(lastAnalysis,t);
 });
-showCafe.addEventListener('change',e=>{ if(e.target.checked) loadCafes(); else if(cafeLayer) cafeLayer.remove(); });
+Object.keys(POI_CATS).forEach(k=>$('poi_'+k).addEventListener('change',e=>{ if(e.target.checked) loadPoi(k); else clearPoi(k); }));
 $('locBtn').addEventListener('click',locate);
 
 (function(){
