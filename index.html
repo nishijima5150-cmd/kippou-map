@@ -116,6 +116,12 @@
   .sub{color:var(--paper-dim); font-size:13px}
   .sub b{color:var(--paper); font-weight:700}
 
+  .fortune-stars{color:var(--gold-hi); font-size:20px; letter-spacing:.2em; text-shadow:0 0 12px rgba(201,162,75,.35)}
+  .fortune-stars .off{color:#4a3d27; text-shadow:none}
+  .fortune-title{font-family:"Shippori Mincho",serif; font-weight:800; font-size:21px; letter-spacing:.05em; margin:4px 0 2px; color:var(--paper)}
+  .fortune-pos{font-size:12px; color:var(--gold); letter-spacing:.06em}
+  .fortune-text{font-size:14px; color:var(--paper-dim); margin-top:6px; line-height:1.85}
+
   .best-dir{
     font-family:"Shippori Mincho",serif; font-weight:800; font-size:34px;
     letter-spacing:.1em; color:var(--gold-hi); margin:2px 0 4px;
@@ -281,6 +287,12 @@
       </div>
     </div>
 
+    <p class="eyebrow" style="margin-top:20px">本日の運勢</p>
+    <div class="fortune-stars" id="fStars">—</div>
+    <div class="fortune-title" id="fTitle">—</div>
+    <div class="fortune-pos" id="fPos"></div>
+    <div class="fortune-text" id="fText"></div>
+
     <p class="eyebrow" style="margin-top:20px">本日の吉方</p>
     <div class="best-dir" id="bestDir">—</div>
     <div class="best-why" id="bestWhy"></div>
@@ -390,6 +402,25 @@ function relation(eh,ed){
   if(GEN[eh]===ed) return {label:"相生（あなたが吉方を生じる）", rank:1};
   return {label:"相剋", rank:0};
 }
+// 本命星が入った「宮」ごとのその日の運勢
+const PALACE_BY_DIR=["坎宮","艮宮","震宮","巽宮","離宮","坤宮","兌宮","乾宮"];
+const FORTUNE={
+  "中宮":{star:3,title:"力を溜めて内を整える日",text:"物事の中心に立つ日ですが、思うように進みにくい面も。新しいことを急がず、身の回りの整理や自分を見つめる時間に充てると流れが整います。"},
+  "乾宮":{star:5,title:"追い風に乗る、充実の日",text:"目上の人や頼れる人の助けが得られやすい日。大事な話や決断、挑戦に向いています。自信を持って一歩前へ。"},
+  "兌宮":{star:4,title:"喜びと実りの日",text:"楽しい出来事や人との会話から運が開きます。お金や食事に恵まれやすい反面、つい使いすぎには注意。笑顔が福を呼びます。"},
+  "艮宮":{star:3,title:"切り替えと整理の日",text:"物事が変わり始めるタイミング。不要なものを手放したり、区切りをつけるのに向いています。急な変更にも落ち着いて対応を。"},
+  "離宮":{star:3,title:"直感が冴える、華やぐ日",text:"ひらめきや注目が集まりやすい日。人前に出る場面には向いていますが、感情的になりやすいので言葉選びは丁寧に。"},
+  "坎宮":{star:2,title:"無理せず守りの日",text:"流れが滞りやすく、疲れも出やすい日。大きな決断は避け、休息と体調管理を優先しましょう。静かに過ごすことが吉。"},
+  "坤宮":{star:3,title:"コツコツ積み上げる日",text:"派手さはなくても、地道な努力が土台になる日。準備や下ごしらえ、家庭や身近な人との時間を大切に。"},
+  "震宮":{star:4,title:"始動と発展の日",text:"新しいことを始めるのに勢いがつく日。行動が運を呼びます。ただし焦りは禁物、計画を立ててから動くとより良い結果に。"},
+  "巽宮":{star:4,title:"信頼と縁が整う日",text:"人との縁や信用に恵まれやすい日。連絡・挨拶・約束ごとが好調です。丁寧なやり取りが、後の運を育てます。"}
+};
+function fortuneOf(honmei, cD){
+  if(cD===honmei) return {palace:"中宮", dir:null, ...FORTUNE["中宮"]};
+  for(let i=0;i<8;i++) if(starAt(cD,i)===honmei){
+    const p=PALACE_BY_DIR[i]; return {palace:p, dir:DIRS[i], ...FORTUNE[p]};
+  }
+}
 function analyze(birthDate, targetDate){
   const honmei=honmeiStar(birthDate), eh=STAR_ELEM[honmei];
   const cD=dayChuko(targetDate), cM=monthChuko(targetDate), cY=yearChuko(targetDate);
@@ -419,6 +450,7 @@ function analyze(birthDate, targetDate){
     honmei, honmeiName:STAR_NAME[honmei], honmeiElem:eh,
     chukoDay:cD, chukoMonth:cM, chukoYear:cY,
     gzName:STEMS[gz%10]+BRANCHES[gz%12],
+    fortune:fortuneOf(honmei,cD),
     dirs, goods, best:goods[0]||null
   };
 }
@@ -528,6 +560,12 @@ function render(a, targetDate){
   $('honmei').textContent=a.honmeiName;
   $('dayInfo').innerHTML=`${fmtDate(targetDate)}　<b>${a.gzName}</b>の日<br>`+
     `日盤 <b>${STAR_NAME[a.chukoDay]}</b>／月盤 ${STAR_NAME[a.chukoMonth]}／年盤 ${STAR_NAME[a.chukoYear]}`;
+
+  const f=a.fortune;
+  $('fStars').innerHTML='★'.repeat(f.star)+`<span class="off">${'★'.repeat(5-f.star)}</span>`;
+  $('fTitle').textContent=f.title;
+  $('fPos').textContent=`${a.honmeiName}は「${f.palace}${f.dir?'（'+f.dir+'）':''}」に入っています`;
+  $('fText').textContent=f.text;
 
   if(a.best){
     $('bestDir').textContent=a.best.name;
