@@ -645,6 +645,7 @@ $('calc').addEventListener('click',()=>{
   $('calcErr').hidden=true;
   const b=parseInputDate('birth'), t=parseInputDate('target');
   if(!b||!t){ $('calcErr').hidden=false; $('calcErr').textContent="生年月日と調べる日を入力してください。"; return; }
+  try{ localStorage.setItem('kippou_birth',$('birth').value); }catch(e){}
   lastAnalysis=analyze(b,t);
   render(lastAnalysis,t);
 });
@@ -656,6 +657,10 @@ $('locBtn').addEventListener('click',locate);
   const jst=new Date(now.getTime()+(now.getTimezoneOffset()+540)*60000);
   $('target').value=`${jst.getFullYear()}-${String(jst.getMonth()+1).padStart(2,'0')}-${String(jst.getDate()).padStart(2,'0')}`;
   initMap();
+  // 保存済みの生年月日があれば、入力せずそのまま占う
+  let saved=null;
+  try{ saved=localStorage.getItem('kippou_birth'); }catch(e){}
+  if(saved){ $('birth').value=saved; $('calc').click(); }
 })();
 </script>
 </body>
